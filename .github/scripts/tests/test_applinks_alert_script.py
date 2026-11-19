@@ -71,6 +71,8 @@ def extract_github_script(workflow: Path) -> str:
 @unittest.skipIf(NODE is None, "node is required to execute github-script blocks")
 class AppLinksAlertScriptTests(unittest.TestCase):
     WORKFLOW = "android-applinks-verify.yml"
+    ALERT_TITLE = "⚠️ assetlinks.json verification failed (scheduled check)"
+    ALERT_TITLE_FRAGMENT = "assetlinks.json verification failed"
 
     def run_alert(self, existing_titles=()):
         script = extract_github_script(WORKFLOWS / self.WORKFLOW)
@@ -90,11 +92,17 @@ class AppLinksAlertScriptTests(unittest.TestCase):
         self.assertEqual(len(created), 1)
         body = created[0]["body"]
         self.assertIn("https://github.com/acme/app/actions/runs/4242", body)
-        self.assertIn("assetlinks.json verification failed", created[0]["title"])
+        self.assertIn(self.ALERT_TITLE_FRAGMENT, created[0]["title"])
 
     def test_existing_open_alert_is_not_duplicated(self):
-        title = "⚠️ assetlinks.json verification failed (scheduled check)"
-        self.assertEqual(self.run_alert(existing_titles=[title]), [])
+        self.assertEqual(self.run_alert(existing_titles=[self.ALERT_TITLE]), [])
+
+
+@unittest.skipIf(NODE is None, "node is required to execute github-script blocks")
+class IosAppLinksAlertScriptTests(AppLinksAlertScriptTests):
+    WORKFLOW = "ios-applinks-verify.yml"
+    ALERT_TITLE = "⚠️ apple-app-site-association verification failed (scheduled check)"
+    ALERT_TITLE_FRAGMENT = "apple-app-site-association verification failed"
 
 
 if __name__ == "__main__":

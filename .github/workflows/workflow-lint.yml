@@ -28,4 +28,6 @@ jobs:
         run: python3 .github/scripts/check_workflow_refs.py
 
       - name: Run workflow lint unit tests
-        run: python3 -m unittest discover -s .github/scripts/tests -p "test_check_workflow_refs.py" -v
+        run: |
+          python3 -m unittest discover -s .github/scripts/tests -p "test_check_workflow_refs.py" -v
+          python3 -m unittest discover -s .github/scripts/tests -p "test_applinks_alert_script.py" -v
