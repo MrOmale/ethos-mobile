@@ -125,9 +125,23 @@ object NetworkQualityDetector {
  */
 data class Vault(
     val id: String,
-    val name: String,
-    val version: Long = DEFAULT_VERSION
+    val name: String = id,
+    val version: Long = DEFAULT_VERSION,
+    // Fields below were introduced with the vault list/detail UI (#216-#219). They default
+    // so that responses and constructors that only supply id/name/version keep working.
+    val owner: String = "",
+    val beneficiary: String = "",
+    val balance: Long = 0L,
+    val checkInInterval: Long = 0L,
+    val lastCheckIn: String = "",
+    val ttlRemaining: Long? = null,
+    val status: VaultStatus = VaultStatus.active,
+    // Optional owner-set display name (#218). Null until set.
+    val label: String? = null
 ) {
+    /** True when the vault's time-to-live is under one day (#219 "Expiring Soon" filter). */
+    val isExpiringSoon: Boolean get() = (ttlRemaining ?: Long.MAX_VALUE) < 86_400L
+
     companion object {
         /**
          * Version assigned to vaults from servers that do not report a version.
@@ -145,6 +159,66 @@ data class Vault(
     fun isNewerThan(other: Vault?): Boolean {
         if (other == null) return true
         return version > other.version
+    }
+}
+
+@Serializable
+enum class VaultStatus { active, expired, released, paused }
+
+// #216: configurable threshold for the "large withdrawal" confirmation step —
+// a single tunable knob rather than a literal scattered across call sites.
+object WithdrawalThreshold {
+    /** Percentage of the vault's balance (basis points, 10_000 = 100%) at or
+     *  above which a withdrawal is considered "large" and prompts an extra
+     *  confirmation step. Defaults to 80%. */
+    const val LARGE_WITHDRAWAL_BPS = 8_000
+}
+
+/**
+ * Whether [amount] is large enough relative to [vaultBalance] to warrant an
+ * extra confirmation step before withdrawing (#216) — reduces fat-finger risk
+ * on a product holding funds meant for a beneficiary. [thresholdBps] is the
+ * percentage of the vault's balance (basis points, 10_000 = 100%) at or above
+ * which the warning triggers; a parameter rather than hardcoded here so it
+ * can be tuned via [WithdrawalThreshold] without touching call sites.
+ */
+fun isLargeWithdrawal(amount: Long, vaultBalance: Long, thresholdBps: Int): Boolean {
+    if (vaultBalance <= 0 || amount <= 0) return false
+    val ratio = amount.toDouble() / vaultBalance.toDouble()
+    return ratio * 10_000 >= thresholdBps
+}
+
+// #219: status filter chips for the vault list.
+enum class VaultListFilter(val label: String) {
+    ALL("All"),
+    ACTIVE("Active"),
+    EXPIRING_SOON("Expiring Soon"),
+    EXPIRED("Expired");
+
+    fun matches(vault: Vault): Boolean = when (this) {
+        ALL -> true
+        ACTIVE -> vault.status == VaultStatus.active
+        EXPIRING_SOON -> vault.status == VaultStatus.active && vault.isExpiringSoon
+        EXPIRED -> vault.status == VaultStatus.expired
+    }
+}
+
+/**
+ * Client-side search/filter over an already-fetched vault list (#219) — works
+ * across every page already pulled into the vault list, since it's a pure
+ * filter over that list rather than a server request.
+ *
+ * Filters by [statusFilter], then by [searchText] matched case-insensitively
+ * against the vault's label (if set) or id. Blank [searchText] (after
+ * trimming) matches everything.
+ */
+fun filterVaults(vaults: List<Vault>, searchText: String, statusFilter: VaultListFilter): List<Vault> {
+    val statusFiltered = vaults.filter { statusFilter.matches(it) }
+    val trimmed = searchText.trim()
+    if (trimmed.isEmpty()) return statusFiltered
+    return statusFiltered.filter { vault ->
+        vault.id.contains(trimmed, ignoreCase = true) ||
+            (vault.label?.contains(trimmed, ignoreCase = true) ?: false)
     }
 }
 
