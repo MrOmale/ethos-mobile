@@ -4,6 +4,19 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+// One of possibly several passkeys registered to the authenticated account (#206, #207) —
+// an account is not limited to a single credential, so this is always modeled as a list
+// (`List<PasskeyCredential>`), never a lone value.
+@Serializable
+data class PasskeyCredential(
+    @SerialName("credential_id") val credentialId: String,
+    @SerialName("device_label") val deviceLabel: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("last_used_at") val lastUsedAt: String? = null
+)
 
 /**
  * Network quality tiers used to adapt image quality and API pagination.
