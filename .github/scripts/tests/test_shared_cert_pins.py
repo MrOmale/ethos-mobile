@@ -87,12 +87,13 @@ class GeneratorUsesSharedSchemaTests(unittest.TestCase):
         self.assertNotIn("missing or empty 'current'", err.getvalue())
 
     def test_monitor_runs_against_committed_pin_file(self):
-        # Runs the CI gate against the file actually committed to the repo.
+        # Runs the CI gate against the file actually committed to the repo. The
+        # committed all-zero fingerprint is rejected by design (#739), so the
+        # assertion is the #737 regression only: no missing-'current' schema error.
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            rc = generate_cert_pins.main(["--check", "--shared", str(SHARED_PINS)])
-        self.assertNotEqual(rc, 2, err.getvalue())
-        self.assertNotIn("missing or empty", err.getvalue())
+            generate_cert_pins.main(["--check", "--shared", str(SHARED_PINS)])
+        self.assertNotIn("missing or empty 'current'", err.getvalue())
 
 
 if __name__ == "__main__":
