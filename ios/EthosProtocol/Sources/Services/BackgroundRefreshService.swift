@@ -55,7 +55,17 @@ final class BackgroundRefreshService {
         scheduleAppRefreshCallCount += 1
         let request = BGAppRefreshTaskRequest(identifier: Self.taskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 3_600) // poll every hour
-        try? BGTaskScheduler.shared.submit(request)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // #773: submit errors (e.g. TooManyScheduled, NotPermitted) previously vanished
+            // silently, stopping the TTL refresh with no trace. Log the redacted message and
+            // record the error code so the failure is visible in diagnostics.
+            let code = (error as NSError).code
+            os_log(.error, log: Self.log, "submit failed: code=%{public}d error=%{public}@",
+                   code, LogRedactor.redactString(error.localizedDescription))
+            PerformanceMonitor.shared.recordBackgroundSubmitFailure(code: code)
+        }
         // #204: lets a multi-day Console.app trace compare requested vs. observed cadence.
         Self.log.log("scheduled: earliestBeginDate=+3600s")
     }
