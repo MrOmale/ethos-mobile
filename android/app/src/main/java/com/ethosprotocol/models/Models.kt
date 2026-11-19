@@ -221,3 +221,56 @@ data class Switch2FARequest(
     val phone: String? = null,
     val email: String? = null
 )
+
+@Serializable
+data class AuthChallenge(
+    val challenge: String,
+    @SerialName("expires_at") val expiresAt: String,
+    @SerialName("existing_credential_ids") val existingCredentialIds: List<String> = emptyList()
+)
+
+@Serializable
+data class AuthToken(
+    val token: String,
+    @SerialName("expires_at") val expiresAt: String
+)
+
+@Serializable
+data class PasskeyVerifyRequest(
+    @SerialName("credential_id") val credentialId: String,
+    @SerialName("client_data_json") val clientDataJson: String,
+    val signature: String
+)
+
+@Serializable
+data class PasskeyRegisterRequest(
+    @SerialName("credential_id") val credentialId: String,
+    // `public_key` is the WebAuthn COSE_Key (RFC 9052) extracted from the attestation
+    // object's authData, base64url-encoded — not the raw CBOR attestation object.
+    // See shared/api-contract.md's PasskeyRegisterRequest (#1) section.
+    @SerialName("public_key") val publicKey: String,
+    @SerialName("client_data_json") val clientDataJson: String
+)
+
+// MARK: - Account Recovery ("lost your device?")
+//
+// Shared contract with iOS's #5: initiate() sends a recovery code to the account's
+// verified email, complete() links a newly-created passkey to that existing account once
+// the recovery token proves the requester received that code.
+
+@Serializable
+data class RecoveryInitiateRequest(val username: String)
+
+@Serializable
+data class RecoveryInitiateResponse(
+    @SerialName("recovery_token") val recoveryToken: String,
+    @SerialName("expires_at") val expiresAt: String
+)
+
+@Serializable
+data class RecoveryCompleteRequest(
+    @SerialName("recovery_token") val recoveryToken: String,
+    @SerialName("credential_id") val credentialId: String,
+    @SerialName("public_key") val publicKey: String,
+    @SerialName("client_data_json") val clientDataJson: String
+)
