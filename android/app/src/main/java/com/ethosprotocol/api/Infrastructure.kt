@@ -379,3 +379,162 @@ class EncryptedTokenProvider @Inject constructor(
         const val KEY_EXPIRES_AT = "expires_at_epoch_millis"
     }
 }
+
+// Wraps a cached response with the wall-clock time it was written, so callers can tell how
+// stale the data is instead of presenting it as unconditionally "current".
+@Serializable
+data class CacheEnvelope(val timestamp: Long, val data: String)
+
+@Singleton
+class OfflineCache @Inject constructor(@ApplicationContext private val context: Context) {
+    private val dir = File(context.cacheDir, "ttl_offline").also { it.mkdirs() }
+
+    // Byte cap for the cache directory's total size; least-recently-used entries are evicted
+    // once a save() pushes the directory over this cap. Exposed as `internal var` (rather than
+    // a constructor param) so tests can shrink it to force eviction deterministically without
+    // fighting Hilt's @Inject constructor resolution.
+    internal var maxCacheBytes: Long = DEFAULT_MAX_CACHE_BYTES
+
+    // Entries older than maxAgeMs are treated as stale by load() — a non-null cachedAt is
+    // still returned by load() but also flagged via the CacheEnvelope so the UI can surface
+    // "last updated N hours ago" instead of silently serving data. -1L means no expiry enforced.
+    internal var maxAgeMs: Long = DEFAULT_MAX_AGE_MS
+
+    // Optional more aggressive TTL (in addition to maxAgeMs) for faster cache invalidation
+    // when needed. Set to non-negative value to enable. -1L means no aggressive TTL enforced.
+    internal var aggressiveTtlMs: Long = -1L
+
+    // Tracks access recency in-memory (accessOrder = true keeps the most-recently-used entry at
+    // the tail on both get and put). Filesystem mtime is deliberately not used for LRU ordering
+    // since its resolution varies across filesystems/devices and would make eviction order
+    // unpredictable; this only needs to be accurate for the current process's lifetime.
+    private val accessOrder = Collections.synchronizedMap(
+        object : LinkedHashMap<String, Unit>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>) = false
+        }
+    )
+
+    init {
+        dir.listFiles()?.sortedBy { it.lastModified() }?.forEach { accessOrder[it.name] = Unit }
+        // Clean up expired cache entries on app launch
+        cleanupExpiredEntries()
+    }
+
+    fun save(key: String, json: String) {
+        val fileName = key.sha256()
+        val envelope = CacheEnvelope(timestamp = System.currentTimeMillis(), data = json)
+        File(dir, fileName).writeText(Json.encodeToString(CacheEnvelope.serializer(), envelope))
+        touch(fileName)
+        CacheTelemetry.recordWrite(json.length.toLong())
+        evictIfNeeded()
+    }
+
+    fun load(key: String): CacheEnvelope? {
+        val fileName = key.sha256()
+        val envelope = runCatching {
+            Json.decodeFromString(CacheEnvelope.serializer(), File(dir, fileName).readText())
+        }.getOrNull()
+        if (envelope != null) {
+            touch(fileName)
+            if (isCachedAtStale(envelope.timestamp)) {
+                CacheTelemetry.recordStaleServed()
+            } else {
+                CacheTelemetry.recordHit()
+            }
+        } else {
+            CacheTelemetry.recordMiss()
+        }
+        return envelope
+    }
+
+    // Wipes every cached entry, e.g. on sign-out so the next user's device doesn't retain a
+    // previous account's vault data offline.
+    fun clear() {
+        dir.listFiles()?.forEach { it.delete() }
+        accessOrder.clear()
+    }
+
+    /** Returns true when the given cache timestamp is older than [maxAgeMs] or [aggressiveTtlMs]. */
+    fun isCachedAtStale(timestamp: Long): Boolean {
+        val now = System.currentTimeMillis()
+        val age = now - timestamp
+        // Check aggressive TTL first if set
+        if (aggressiveTtlMs >= 0 && age > aggressiveTtlMs) return true
+        // Then check standard maxAgeMs
+        if (maxAgeMs < 0) return false
+        return age > maxAgeMs
+    }
+
+    /** Cleans up expired cache entries on app launch or manual trigger. */
+    fun cleanupExpiredEntries() {
+        dir.listFiles()?.forEach { file ->
+            runCatching {
+                val envelope = Json.decodeFromString(CacheEnvelope.serializer(), file.readText())
+                if (isCachedAtStale(envelope.timestamp)) {
+                    file.delete()
+                    accessOrder.keys.remove(file.name)
+                }
+            }
+        }
+    }
+
+    /** Invalidate cache entry for a specific key, typically on manual refresh. */
+    fun invalidate(key: String) {
+        val fileName = key.sha256()
+        File(dir, fileName).delete()
+        accessOrder.keys.remove(fileName)
+    }
+
+    private fun touch(fileName: String) {
+        accessOrder[fileName] = Unit
+    }
+
+    private fun evictIfNeeded() {
+        var totalSize = dir.listFiles()?.sumOf { it.length() } ?: 0L
+        if (totalSize <= maxCacheBytes) return
+        val leastRecentlyUsed = synchronized(accessOrder) { accessOrder.keys.toList() }
+        for (fileName in leastRecentlyUsed) {
+            if (totalSize <= maxCacheBytes) break
+            val file = File(dir, fileName)
+            if (file.exists()) {
+                totalSize -= file.length()
+                file.delete()
+            }
+            accessOrder.keys.remove(fileName)
+        }
+    }
+
+    private fun String.sha256(): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    companion object {
+        const val DEFAULT_MAX_CACHE_BYTES = 5L * 1024 * 1024 // 5 MB
+        const val DEFAULT_MAX_AGE_MS = 24L * 60 * 60 * 1000 // 24 hours
+    }
+}
+
+/** Tracks offline-cache access statistics for debug/support diagnostics. */
+object CacheTelemetry {
+    private val _hits = java.util.concurrent.atomic.AtomicLong(0)
+    private val _misses = java.util.concurrent.atomic.AtomicLong(0)
+    private val _staleServed = java.util.concurrent.atomic.AtomicLong(0)
+    private val _bytesWritten = java.util.concurrent.atomic.AtomicLong(0)
+
+    val hits: Long get() = _hits.get()
+    val misses: Long get() = _misses.get()
+    val staleServed: Long get() = _staleServed.get()
+    val bytesWritten: Long get() = _bytesWritten.get()
+
+    fun recordHit() { _hits.incrementAndGet() }
+    fun recordMiss() { _misses.incrementAndGet() }
+    fun recordStaleServed() { _staleServed.incrementAndGet() }
+    fun recordWrite(bytes: Long) { _bytesWritten.addAndGet(bytes.coerceAtLeast(0L)) }
+
+    fun reset() { _hits.set(0); _misses.set(0); _staleServed.set(0); _bytesWritten.set(0) }
+
+    fun snapshot() = CacheTelemetrySnapshot(hits, misses, staleServed, bytesWritten)
+}
+
+data class CacheTelemetrySnapshot(val hits: Long, val misses: Long, val staleServed: Long, val bytesWritten: Long)
