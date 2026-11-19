@@ -27,6 +27,11 @@ defaults:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Only PR runs are superseded; scheduled and push runs keep their results.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check-cert-expiry:
     name: Check Pinned Certificate Expiry
