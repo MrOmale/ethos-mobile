@@ -41,6 +41,8 @@ jobs:
   preflight:
     name: Staging API preflight
     runs-on: ubuntu-latest
+    # one curl with --max-time 10; fails fast if staging is down.
+    timeout-minutes: 5
     outputs:
       api_url: ${{ steps.resolve.outputs.api_url }}
     steps:
@@ -65,6 +67,8 @@ jobs:
   ios-e2e:
     name: iOS E2E
     runs-on: macos-latest
+    # macOS runner: Xcode select, XcodeGen, build-for-testing, then the XCUITest run.
+    timeout-minutes: 60
     needs: preflight
     defaults:
       run:
@@ -130,6 +134,8 @@ jobs:
   android-e2e:
     name: Android E2E
     runs-on: ubuntu-latest
+    # emulator boot plus APK build and Espresso/UI Automator run.
+    timeout-minutes: 60
     needs: preflight
     defaults:
       run:
@@ -207,6 +213,8 @@ jobs:
   acceptance-flow-fixture:
     name: Seed shared acceptance-flow fixture
     runs-on: ubuntu-latest
+    # seeds one staging fixture via API calls; no simulator.
+    timeout-minutes: 10
     needs: preflight
     outputs:
       vault_id: ${{ steps.seed.outputs.vault_id }}
@@ -241,6 +249,8 @@ jobs:
   acceptance-flow-ios:
     name: iOS — beneficiary acceptance flow
     runs-on: macos-latest
+    # macOS runner: simulator build and beneficiary acceptance flow.
+    timeout-minutes: 60
     needs: [preflight, acceptance-flow-fixture]
     defaults:
       run:
@@ -312,6 +322,8 @@ jobs:
   acceptance-flow-android:
     name: Android — beneficiary acceptance flow
     runs-on: ubuntu-latest
+    # emulator boot plus beneficiary acceptance flow.
+    timeout-minutes: 60
     needs: [preflight, acceptance-flow-fixture]
     defaults:
       run:
@@ -396,6 +408,8 @@ jobs:
   offline-sync-flow-android:
     name: Android — offline check-in sync flow
     runs-on: ubuntu-latest
+    # emulator boot plus offline check-in sync flow.
+    timeout-minutes: 60
     needs: preflight
     defaults:
       run:
@@ -467,6 +481,8 @@ jobs:
   offline-sync-flow-ios:
     name: iOS — offline check-in sync flow
     runs-on: macos-latest
+    # macOS runner: simulator build plus offline check-in sync flow.
+    timeout-minutes: 60
     needs: preflight
     defaults:
       run:
@@ -527,6 +543,8 @@ jobs:
   e2e-summary:
     name: E2E summary
     runs-on: ubuntu-latest
+    # aggregates job results and writes the summary; no build.
+    timeout-minutes: 10
     needs:
       [
         ios-e2e,
