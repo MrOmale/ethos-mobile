@@ -47,7 +47,12 @@ final class BackgroundRefreshService {
 
     func registerBackgroundTask() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.taskIdentifier, using: nil) { [weak self] task in
-            self?.handleRefresh(task: task as! BGAppRefreshTask)
+            // #776: a force-cast here crashed the handler if iOS delivered a different task type.
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self?.handleRefresh(task: refreshTask)
         }
     }
 
