@@ -147,3 +147,52 @@ data class Vault(
         return version > other.version
     }
 }
+
+// MARK: - Sessions (#208)
+//
+// A device currently holding a valid JWT for this account. Backs SessionsScreen's device
+// list and its "Sign out this device" / "Sign out all other devices" actions.
+
+@Serializable
+data class Session(
+    val id: String,
+    @SerialName("device_name") val deviceName: String,
+    val platform: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("last_active_at") val lastActiveAt: String,
+    @SerialName("is_current") val isCurrent: Boolean
+)
+
+/**
+ * Guards an irreversible action (delete/archive a vault, etc.) behind a typed
+ * confirmation rather than a plain Yes/No tap — codified now as a guardrail
+ * before any delete/archive endpoint is wired up on either client (#220),
+ * given the financial and beneficiary implications of getting this wrong.
+ * [requiredText] is typically the vault's own name/ID, so confirming requires
+ * the user to actually read and type it back exactly. Mirrors iOS's
+ * `DestructiveConfirmation` (Sources/Models/Models.swift).
+ */
+data class DestructiveConfirmation(
+    val requiredText: String,
+    val enteredText: String = ""
+) {
+    val isConfirmed: Boolean get() = requiredText.isNotEmpty() && enteredText == requiredText
+
+    /**
+     * Runs [action] only if [isConfirmed] — the single choke point the
+     * destructive-confirmation dialog uses, so "the button is disabled" and
+     * "the underlying action never fires" can't drift apart from each other.
+     */
+    fun confirmIfMatched(action: () -> Unit) {
+        if (isConfirmed) action()
+    }
+}
+
+// #109: Beneficiary acceptance request body.
+// The token is parsed from the accept deep-link URL query parameter and is
+// required by the server to authorise acceptance. See api-contract.md §POST /vaults/{id}/accept.
+@Serializable
+data class BeneficiaryAcceptRequest(
+    @SerialName("vault_id") val vaultId: String,
+    val token: String
+)
