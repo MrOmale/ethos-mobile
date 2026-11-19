@@ -186,6 +186,17 @@ class ApiClient(
         return get(path)
     }
     suspend fun getVault(id: String): ApiResult<Vault> = get("/vaults/${vaultPathSegment(id)}")
+
+    /**
+     * Activity history for a vault (#217). Pass [after] = page.nextCursor for the next page.
+     * The cursor is percent-encoded via URLBuilder, matching [listVaults].
+     */
+    suspend fun getVaultHistory(vaultId: String, after: String? = null): ApiResult<VaultHistoryPage> {
+        val path = URLBuilder("/vaults/${vaultPathSegment(vaultId)}/history").apply {
+            if (after != null) parameters.append("after", after)
+        }.buildString()
+        return get(path)
+    }
     suspend fun createVault(req: CreateVaultRequest, idempotencyKey: String? = null): ApiResult<Vault> =
         post("/vaults", req, idempotencyKey = idempotencyKey)
     suspend fun checkIn(vaultId: String, idempotencyKey: String? = null): ApiResult<Unit> =
