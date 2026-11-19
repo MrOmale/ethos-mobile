@@ -57,12 +57,19 @@ def normalise(raw: str) -> str | None:
     return path
 
 
+BAD_GRADLE_EXT = re.compile(r"[\w\-]+\.gradle\.kt(?!s)\b")
+
+
 def check_file(md_path: str, tops: set[str]) -> list[str]:
     """Return human-readable descriptions of broken references in one document."""
     with open(md_path, encoding="utf-8") as fh:
         text = fh.read()
     doc_dir = os.path.dirname(md_path)
+    rel_doc = os.path.relpath(md_path, REPO_ROOT)
     problems: list[str] = []
+    # Gradle Kotlin DSL build scripts end in .gradle.kts; a bare .kt is always a typo.
+    for m in BAD_GRADLE_EXT.finditer(text):
+        problems.append(f"{rel_doc}: build script must end in .gradle.kts: {m.group(0)}")
     seen: set[str] = set()
     for raw, is_link in candidates(text):
         path = normalise(raw)
