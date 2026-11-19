@@ -187,6 +187,9 @@ class ApiClient(
     }
     suspend fun getVault(id: String): ApiResult<Vault> = get("/vaults/${vaultPathSegment(id)}")
 
+    /** Latest and minimum supported app versions (#725). */
+    suspend fun getAppVersion(): ApiResult<AppVersionInfo> = get("/app/version")
+
     /**
      * Activity history for a vault (#217). Pass [after] = page.nextCursor for the next page.
      * The cursor is percent-encoded via URLBuilder, matching [listVaults].
