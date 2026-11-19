@@ -8,7 +8,7 @@ prose such as `and/or` or example URLs are ignored. Glob patterns, URLs and
 pure anchors are skipped. Trailing `:line` or `#Lnn` suffixes are stripped.
 
 Usage:
-    python3 .github/scripts/check_doc_paths.py                 # shared/*.md
+    python3 .github/scripts/check_doc_paths.py                 # shared/*.md and docs/*.md
     python3 .github/scripts/check_doc_paths.py docs/*.md       # explicit files
 
 Exits 1 when any cited path does not exist, listing each broken reference.
@@ -22,7 +22,7 @@ import re
 import sys
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DEFAULT_PATTERNS = ["shared/*.md"]
+DEFAULT_PATTERNS = ["shared/*.md", "docs/*.md"]
 
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 MD_LINK = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
@@ -50,7 +50,10 @@ def normalise(raw: str) -> str | None:
     if raw.startswith(("http://", "https://", "mailto:", "#")):
         return None
     path = LINE_SUFFIX.sub("", raw.split("#", 1)[0])
-    if "*" in path or "?" in path or "{" in path:
+    if "*" in path or "?" in path or "{" in path or "..." in path:
+        return None
+    # Gradle/Xcode build outputs are generated, so they never exist in a checkout.
+    if "build" in path.split("/"):
         return None
     if not PATH_SHAPE.match(path) or ("/" not in path and "." not in path):
         return None
