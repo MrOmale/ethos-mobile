@@ -28,12 +28,10 @@ permissions:
   contents: read
   pull-requests: write
 
-# One run per PR at a time. When Dependabot pushes several PRs in quick
-# succession, runs for the same PR are serialised (newest wins) and runs for
-# different PRs no longer race on shared repository state.
 concurrency:
-  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Only PR runs are superseded; scheduled and push runs keep their results.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   enable-auto-merge:
